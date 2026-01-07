@@ -1,319 +1,269 @@
 "use client"
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Product, ProductCategory } from '@/lib/types';
-import { getAllProducts, getProductsByCategory, filterProducts, getFeaturedProducts } from '@/lib/products';
-import { useCart } from '@/lib/cart';
+import { Product, ProductFilters as ProductFiltersType, PaginatedProducts } from '@/lib/types';
+import { filterProducts, searchProductsWithFilters } from '@/lib/products';
+import { ProductCard } from './ProductCard';
+import { Button } from '@/components/ui';
+import { Badge } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
-interface ProductCardProps {
-  product: Product;
-  onProductClick?: (product: Product) => void;
-}
-
-function ProductCard({ product, onProductClick }: ProductCardProps) {
-  const { addItem } = useCart();
-  const [selectedColor, setSelectedColor] = useState(product.colors[0]?.name || '');
-  const [selectedSize, setSelectedSize] = useState(product.sizes.find(s => s.available)?.value || '');
-
-  const handleAddToCart = () => {
-    if (selectedColor && selectedSize) {
-      const variantId = `${product.id}_${selectedColor}_${selectedSize}`;
-      addItem(product.id, variantId, 1);
-    }
-  };
-
-  const isOnSale = product.originalPrice !== undefined;
-  const discountPercent = isOnSale ? Math.round(((product.originalPrice! - product.price) / product.originalPrice!) * 100) : 0;
-
-  return (
-    <Card className="group overflow-hidden hover:shadow-lg transition-all duration-300">
-      <div className="relative overflow-hidden">
-        <img
-          src={product.images[0]}
-          alt={product.name}
-          className="h-64 w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          onClick={() => onProductClick?.(product)}
-          style={{ cursor: onProductClick ? 'pointer' : 'default' }}
-        />
-        {isOnSale && (
-          <Badge className="absolute top-2 right-2 bg-red-500 text-white">
-            -{discountPercent}%
-          </Badge>
-        )}
-        {product.stock <= 5 && product.stock > 0 && (
-          <Badge className="absolute top-2 left-2 bg-orange-500 text-white">
-            Only {product.stock} left
-          </Badge>
-        )}
-        {product.stock === 0 && (
-          <Badge className="absolute top-2 left-2 bg-gray-500 text-white">
-            Out of Stock
-          </Badge>
-        )}
-      </div>
-
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-start mb-2">
-          <Badge variant="secondary" className="text-xs">
-            {product.category}
-          </Badge>
-          <div className="flex items-center">
-            <span className="text-yellow-400">★</span>
-            <span className="ml-1 text-sm text-gray-600">{product.rating}</span>
-            <span className="ml-1 text-xs text-gray-400">({product.reviews.length})</span>
-          </div>
-        </div>
-        <CardTitle className="text-lg line-clamp-2">{product.name}</CardTitle>
-        <CardDescription className="line-clamp-2 text-sm">
-          {product.description}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="pt-0">
-        {/* Price */}
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-xl font-bold text-gray-900">${product.price}</span>
-          {isOnSale && (
-            <span className="text-sm text-gray-500 line-through">${product.originalPrice}</span>
-          )}
-        </div>
-
-        {/* Colors */}
-        <div className="mb-3">
-          <p className="text-xs text-gray-600 mb-2">Color: {selectedColor}</p>
-          <div className="flex gap-2">
-            {product.colors.map((color) => (
-              <button
-                key={color.name}
-                className={cn(
-                  "w-6 h-6 rounded-full border-2 transition-all",
-                  selectedColor === color.name ? "border-gray-900 scale-110" : "border-gray-300"
-                )}
-                style={{ backgroundColor: color.hex }}
-                onClick={() => setSelectedColor(color.name)}
-                title={color.name}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Sizes */}
-        <div className="mb-4">
-          <p className="text-xs text-gray-600 mb-2">Size: {selectedSize}</p>
-          <div className="grid grid-cols-6 gap-1">
-            {product.sizes.map((size) => (
-              <button
-                key={size.value}
-                className={cn(
-                  "text-xs py-1 px-2 rounded border transition-all",
-                  selectedSize === size.value
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : size.available
-                    ? "border-gray-300 hover:border-gray-500"
-                    : "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
-                )}
-                disabled={!size.available}
-                onClick={() => size.available && setSelectedSize(size.value)}
-              >
-                {size.display}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Add to Cart Button */}
-        <Button
-          className="w-full"
-          onClick={handleAddToCart}
-          disabled={!selectedColor || !selectedSize || product.stock === 0}
-        >
-          {product.stock === 0 ? 'Out of Stock' : 'Add to Cart'}
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
 interface ProductGridProps {
-  category?: ProductCategory;
-  featured?: boolean;
-  limit?: number;
-  showFilters?: boolean;
+  filters?: ProductFiltersType;
+  searchQuery?: string;
   onProductClick?: (product: Product) => void;
+  className?: string;
+  initialPage?: number;
+  itemsPerPage?: number;
 }
 
 export function ProductGrid({ 
-  category, 
-  featured = false, 
-  limit = 20, 
-  showFilters = false,
-  onProductClick 
+  filters = {}, 
+  searchQuery = '',
+  onProductClick, 
+  className,
+  initialPage = 1,
+  itemsPerPage = 20 
 }: ProductGridProps) {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [paginatedProducts, setPaginatedProducts] = useState<PaginatedProducts>({
+    products: [],
+    total: 0,
+    page: initialPage,
+    limit: itemsPerPage,
+    hasNext: false,
+    hasPrevious: false
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Load products when filters, search query, or page change
   useEffect(() => {
+    loadProducts(initialPage, filters, searchQuery);
+  }, [filters, searchQuery]);
+
+  const loadProducts = async (page: number, currentFilters: ProductFiltersType, query: string) => {
     try {
       setLoading(true);
-      let result;
+      setError(null);
       
-      if (featured) {
-        result = getFeaturedProducts(limit);
-      } else if (category) {
-        const paginatedResult = getProductsByCategory(category, 1, limit);
-        result = paginatedResult.products;
+      // Simulate API delay for better UX
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      let result: PaginatedProducts;
+      
+      if (query.trim()) {
+        // Use search with filters
+        result = searchProductsWithFilters(query.trim(), currentFilters, page, itemsPerPage);
       } else {
-        const paginatedResult = getAllProducts(1, limit);
-        result = paginatedResult.products;
+        // Use regular filtering
+        result = filterProducts(currentFilters, page, itemsPerPage);
       }
       
-      setProducts(result);
-      setError(null);
+      setPaginatedProducts(result);
     } catch (err) {
       setError('Failed to load products');
       console.error('Error loading products:', err);
     } finally {
       setLoading(false);
     }
-  }, [category, featured, limit]);
-
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Card key={i} className="animate-pulse">
-            <div className="h-64 bg-gray-200"></div>
-            <CardHeader>
-              <div className="h-4 bg-gray-200 rounded mb-2"></div>
-              <div className="h-6 bg-gray-200 rounded"></div>
-            </CardHeader>
-            <CardContent>
-              <div className="h-4 bg-gray-200 rounded mb-2"></div>
-              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-red-600 mb-4">{error}</p>
-        <Button onClick={() => window.location.reload()}>Try Again</Button>
-      </div>
-    );
-  }
-
-  if (products.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-gray-600">No products found.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-      {products.map((product) => (
-        <ProductCard
-          key={product.id}
-          product={product}
-          onProductClick={onProductClick}
-        />
-      ))}
-    </div>
-  );
-}
-
-// Product listing page component
-export function ProductListing() {
-  const [selectedCategory, setSelectedCategory] = useState<ProductCategory | undefined>();
-  const [viewMode, setViewMode] = useState<'all' | 'featured' | 'sale'>('all');
-
-  const categories = Object.values(ProductCategory);
-
-  const getCategoryDisplayName = (category: ProductCategory): string => {
-    return category.charAt(0).toUpperCase() + category.slice(1);
   };
 
-  const getProducts = () => {
-    switch (viewMode) {
-      case 'featured':
-        return <ProductGrid featured={true} onProductClick={(p) => console.log('Product clicked:', p)} />;
-      case 'sale':
-        return <ProductGrid limit={50} onProductClick={(p) => console.log('Product clicked:', p)} />;
-      default:
-        return (
-          <ProductGrid 
-            category={selectedCategory} 
-            onProductClick={(p) => console.log('Product clicked:', p)} 
-          />
-        );
+  const handlePageChange = (newPage: number) => {
+    loadProducts(newPage, filters, searchQuery);
+    // Scroll to top of grid on page change
+    const gridElement = document.getElementById('product-grid');
+    if (gridElement) {
+      gridElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
-  return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-4">Nike Shoe Collection</h1>
-        <p className="text-gray-600">
-          Discover our latest collection of premium Nike shoes for every occasion.
-        </p>
-      </div>
-
-      {/* Filters */}
-      <div className="mb-8 space-y-4">
-        {/* View Mode Tabs */}
-        <div className="flex gap-2">
-          {[
-            { key: 'all', label: 'All Products' },
-            { key: 'featured', label: 'Featured' },
-            { key: 'sale', label: 'Sale' }
-          ].map((tab) => (
-            <Button
-              key={tab.key}
-              variant={viewMode === tab.key ? 'default' : 'outline'}
-              onClick={() => setViewMode(tab.key as any)}
-            >
-              {tab.label}
-            </Button>
+  // Show loading skeleton
+  if (loading) {
+    return (
+      <div className={cn("space-y-4", className)}>
+        <div className="flex items-center justify-between">
+          <div className="h-6 bg-gray-200 rounded w-32 animate-pulse" />
+          <div className="h-6 bg-gray-200 rounded w-24 animate-pulse" />
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="h-64 bg-gray-200 rounded-t-lg" />
+              <div className="p-4 space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-20" />
+                <div className="h-5 bg-gray-200 rounded w-3/4" />
+                <div className="h-4 bg-gray-200 rounded w-full" />
+                <div className="h-4 bg-gray-200 rounded w-2/3" />
+                <div className="h-8 bg-gray-200 rounded w-full" />
+              </div>
+            </div>
           ))}
         </div>
+      </div>
+    );
+  }
 
-        {/* Category Filter */}
-        {viewMode === 'all' && (
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant={selectedCategory === undefined ? 'default' : 'outline'}
-              onClick={() => setSelectedCategory(undefined)}
-              size="sm"
-            >
-              All Categories
-            </Button>
-            {categories.map((category) => (
-              <Button
-                key={category}
-                variant={selectedCategory === category ? 'default' : 'outline'}
-                onClick={() => setSelectedCategory(category)}
-                size="sm"
-              >
-                {getCategoryDisplayName(category)}
-              </Button>
-            ))}
+  // Show error state
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-red-600 mb-4">
+          <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Products</h3>
+        <p className="text-gray-600 mb-4">{error}</p>
+        <Button onClick={() => loadProducts(paginatedProducts.page, filters, searchQuery)}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  // Show empty state
+  if (paginatedProducts.products.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-gray-400 mb-4">
+          <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2M4 13h2m13-8l-4 4-2-2" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No Products Found</h3>
+        <p className="text-gray-600 mb-4">
+          {searchQuery.trim() 
+            ? `No products found for "${searchQuery}". Try adjusting your filters or search criteria.`
+            : 'Try adjusting your filters or search criteria to find what you\'re looking for.'
+          }
+        </p>
+        <Button variant="outline" onClick={() => loadProducts(1, {}, '')}>
+          Clear All Filters
+        </Button>
+      </div>
+    );
+  }
+
+  const totalPages = Math.ceil(paginatedProducts.total / paginatedProducts.limit);
+  const currentPage = paginatedProducts.page;
+
+  return (
+    <div id="product-grid" className={cn("space-y-6", className)}>
+      {/* Results Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-medium text-gray-900">
+            {paginatedProducts.total} Product{paginatedProducts.total !== 1 ? 's' : ''}
+            {searchQuery.trim() && (
+              <span className="text-gray-600 font-normal">
+                {' '}for "{searchQuery}"
+              </span>
+            )}
+          </h2>
+          <Badge variant="secondary">
+            Page {currentPage} of {totalPages}
+          </Badge>
+        </div>
+        
+        {paginatedProducts.total > 0 && (
+          <div className="text-sm text-gray-600">
+            Showing {((currentPage - 1) * paginatedProducts.limit) + 1} to{' '}
+            {Math.min(currentPage * paginatedProducts.limit, paginatedProducts.total)} of{' '}
+            {paginatedProducts.total} results
           </div>
         )}
       </div>
 
       {/* Products Grid */}
-      {getProducts()}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {paginatedProducts.products.map((product) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            onProductClick={onProductClick}
+            showQuickAdd={true}
+          />
+        ))}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center space-x-2 py-8">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={!paginatedProducts.hasPrevious}
+          >
+            Previous
+          </Button>
+          
+          <div className="flex items-center space-x-1">
+            {/* First page */}
+            {currentPage > 3 && (
+              <>
+                <Button
+                  variant={1 === currentPage ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handlePageChange(1)}
+                >
+                  1
+                </Button>
+                {currentPage > 4 && <span className="px-2 text-gray-400">...</span>}
+              </>
+            )}
+            
+            {/* Page numbers around current page */}
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              
+              return (
+                <Button
+                  key={pageNum}
+                  variant={pageNum === currentPage ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handlePageChange(pageNum)}
+                >
+                  {pageNum}
+                </Button>
+              );
+            })}
+            
+            {/* Last page */}
+            {currentPage < totalPages - 2 && (
+              <>
+                {currentPage < totalPages - 3 && <span className="px-2 text-gray-400">...</span>}
+                <Button
+                  variant={totalPages === currentPage ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handlePageChange(totalPages)}
+                >
+                  {totalPages}
+                </Button>
+              </>
+            )}
+          </div>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={!paginatedProducts.hasNext}
+          >
+            Next
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

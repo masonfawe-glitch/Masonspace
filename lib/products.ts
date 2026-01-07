@@ -216,6 +216,122 @@ export function searchProducts(query: string, limit: number = 50): Product[] {
 }
 
 /**
+ * Search products with filters and pagination
+ */
+export function searchProductsWithFilters(
+  query: string,
+  filters: ProductFilters,
+  page: number = 1,
+  limit: number = 50
+): PaginatedProducts {
+  // First get search results
+  const searchResults = searchProducts(query, 100); // Get more results for filtering
+  
+  // Then apply filters to search results
+  let filteredProducts = searchResults;
+  
+  // Additional filtering on search results
+  if (filters.category) {
+    filteredProducts = filteredProducts.filter(product => product.category === filters.category);
+  }
+
+  // Filter by price range
+  if (filters.minPrice !== undefined) {
+    filteredProducts = filteredProducts.filter(product => product.price >= filters.minPrice!);
+  }
+  if (filters.maxPrice !== undefined) {
+    filteredProducts = filteredProducts.filter(product => product.price <= filters.maxPrice!);
+  }
+
+  // Filter by colors
+  if (filters.colors && filters.colors.length > 0) {
+    filteredProducts = filteredProducts.filter(product => 
+      product.colors.some(color => 
+        filters.colors!.some(filterColor => 
+          color.name.toLowerCase().includes(filterColor.toLowerCase()) ||
+          color.hex.toLowerCase() === filterColor.toLowerCase()
+        )
+      )
+    );
+  }
+
+  // Filter by sizes
+  if (filters.sizes && filters.sizes.length > 0) {
+    filteredProducts = filteredProducts.filter(product => 
+      product.sizes.some(size => 
+        filters.sizes!.includes(size.value) && size.available
+      )
+    );
+  }
+
+  // Filter by collection
+  if (filters.collection) {
+    filteredProducts = filteredProducts.filter(product => 
+      product.collection?.toLowerCase().includes(filters.collection!.toLowerCase())
+    );
+  }
+
+  // Filter by stock availability
+  if (filters.inStock !== undefined) {
+    if (filters.inStock) {
+      filteredProducts = filteredProducts.filter(product => product.stock > 0);
+    } else {
+      filteredProducts = filteredProducts.filter(product => product.stock === 0);
+    }
+  }
+
+  // Filter by sale items
+  if (filters.onSale !== undefined) {
+    if (filters.onSale) {
+      filteredProducts = filteredProducts.filter(product => product.originalPrice !== undefined);
+    } else {
+      filteredProducts = filteredProducts.filter(product => product.originalPrice === undefined);
+    }
+  }
+
+  // Filter by minimum rating
+  if (filters.minRating !== undefined) {
+    filteredProducts = filteredProducts.filter(product => product.rating >= filters.minRating!);
+  }
+
+  // Sort products
+  if (filters.sortBy) {
+    filteredProducts.sort((a, b) => {
+      switch (filters.sortBy) {
+        case 'price_asc':
+          return a.price - b.price;
+        case 'price_desc':
+          return b.price - a.price;
+        case 'name_asc':
+          return a.name.localeCompare(b.name);
+        case 'name_desc':
+          return b.name.localeCompare(a.name);
+        case 'rating_desc':
+          return b.rating - a.rating;
+        case 'newest':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        default:
+          return 0;
+      }
+    });
+  }
+
+  // Apply pagination
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+
+  return {
+    products: paginatedProducts,
+    total: filteredProducts.length,
+    page,
+    limit,
+    hasNext: endIndex < filteredProducts.length,
+    hasPrevious: page > 1
+  };
+}
+
+/**
  * Get available sizes for a product
  */
 export function getAvailableSizes(productId: string): ShoeSize[] {
