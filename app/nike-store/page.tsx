@@ -326,8 +326,7 @@ function NikeStoreDemo() {
           <section className="mb-12">
             <h2 className="text-2xl font-bold mb-6">Featured Products</h2>
             <ProductGrid 
-              featured={true} 
-              limit={8}
+              itemsPerPage={8}
               onProductClick={setSelectedProduct}
             />
           </section>
