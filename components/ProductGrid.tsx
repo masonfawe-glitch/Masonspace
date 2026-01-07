@@ -134,11 +134,13 @@ function ProductCard({ product, onProductClick }: ProductCardProps) {
           {product.stock === 0 ? 'Out of Stock' : 'Add to Cart'}
         </Button>
       </CardContent>
-    </Card>
-  );
-}
+      </Card>
+      );
+      }
 
-interface ProductGridProps {
+      export { ProductCard };
+
+      interface ProductGridProps {
   category?: ProductCategory;
   featured?: boolean;
   limit?: number;
